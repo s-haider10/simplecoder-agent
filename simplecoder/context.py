@@ -32,10 +32,10 @@ class ContextManager:
 
     def estimate_tokens(self, content: Any) -> int:
         """
-        Estimate token count using a simple heuristic.
+        Conservative token estimation (better than len/4).
 
-        Approximation: ~1 token per 4 characters for English text.
-        JSON structure adds ~10% overhead.
+        Uses ~1 token per 2.5 characters for more accurate estimates.
+        This is conservative to prevent context overflow.
 
         Args:
             content: String, dict, or list to estimate tokens for
@@ -47,15 +47,15 @@ class ContextManager:
             return 0
 
         if isinstance(content, str):
-            # Basic heuristic: ~1 token per 4 characters
-            return max(1, len(content) // 4)
+            # Conservative: ~1 token per 2.5 characters
+            return max(1, int(len(content) / 2.5))
 
         elif isinstance(content, dict):
             # JSON serialization + overhead for structure
             try:
                 serialized = json.dumps(content)
-                # Add 10% overhead for JSON structure (braces, quotes, etc.)
-                return int(len(serialized) / 3.5)
+                # Conservative estimate + 50 tokens overhead for structure
+                return max(1, int(len(serialized) / 2.5)) + 50
             except (TypeError, ValueError):
                 # Fallback for non-serializable dicts
                 return sum(
@@ -92,6 +92,8 @@ class ContextManager:
         1. Total tokens exceed max_tokens threshold
         2. Have enough messages to summarize (more than keep_last_k + 2)
 
+        Summarizes sooner (at 4000 tokens) to prevent overflow.
+
         Args:
             messages: Conversation history
 
@@ -103,15 +105,21 @@ class ContextManager:
         if len(messages) <= min_messages_for_summary:
             return False
 
+        # Also require at least 10 messages before summarizing
+        if len(messages) < 10:
+            return False
+
         total_tokens = sum(
             self.estimate_tokens(msg.get("content", ""))
             for msg in messages
         )
 
-        should_summarize = total_tokens > self.max_tokens
+        # Lower threshold (4000) to summarize sooner and prevent overflow
+        threshold = min(self.max_tokens, 4000)
+        should_summarize = total_tokens > threshold
 
         if self.verbose and should_summarize:
-            print(f"[CONTEXT] Tokens ({total_tokens}) exceed threshold ({self.max_tokens}), will summarize")
+            print(f"[CONTEXT] Tokens ({total_tokens}) exceed threshold ({threshold}), will summarize")
 
         return should_summarize
 
