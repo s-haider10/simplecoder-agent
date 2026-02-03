@@ -6,6 +6,7 @@
 
 import json
 from typing import List, Dict, Any
+from rich.console import Console
 
 
 class ContextManager:
@@ -29,6 +30,7 @@ class ContextManager:
         self.keep_last_k = keep_last_k
         self.verbose = verbose
         self.summarization_count = 0
+        self.console = Console()
 
     def estimate_tokens(self, content: Any) -> int:
         """
@@ -119,7 +121,7 @@ class ContextManager:
         should_summarize = total_tokens > threshold
 
         if self.verbose and should_summarize:
-            print(f"[CONTEXT] Tokens ({total_tokens}) exceed threshold ({threshold}), will summarize")
+            self.console.print("[bold magenta]Memory:[/bold magenta] Summarizing conversation history to manage context...")
 
         return should_summarize
 
@@ -141,10 +143,6 @@ class ContextManager:
         """
         self.summarization_count += 1
 
-        if self.verbose:
-            print(f"[CONTEXT] Compacting history (summarization #{self.summarization_count})")
-            print(f"[CONTEXT] Before: {len(messages)} messages")
-
         # Separate messages
         system_msg = None
         first_user_msg = None
@@ -162,9 +160,27 @@ class ContextManager:
         if len(rest_messages) <= self.keep_last_k:
             return messages
 
-        # Split into old (to summarize) and recent (to keep)
-        old_messages = rest_messages[:-self.keep_last_k]
-        recent_messages = rest_messages[-self.keep_last_k:]
+        # Split into old (to summarize) and recent (to keep).
+        # IMPORTANT: never split an assistant[tool_calls] / tool group — Gemini
+        # requires every tool message to have its parent assistant immediately before it.
+        # Walk backwards from the cut point and push it earlier if it lands mid-group.
+        cut = len(rest_messages) - self.keep_last_k
+        while cut > 0:
+            msg = rest_messages[cut]
+            # If the cut lands on a tool message, keep scanning back until we find
+            # the assistant that owns it (or the start of the list).
+            if msg.get("role") == "tool":
+                cut -= 1
+                continue
+            # If the cut lands right after an assistant with tool_calls, that assistant
+            # must stay with its tool messages — move cut before it.
+            if cut > 0 and rest_messages[cut - 1].get("role") == "assistant" and rest_messages[cut - 1].get("tool_calls"):
+                cut -= 1
+                continue
+            break
+
+        old_messages = rest_messages[:cut]
+        recent_messages = rest_messages[cut:]
 
         # Create extractive summary of old messages
         summary = self._extractive_summary(old_messages)
@@ -187,11 +203,6 @@ class ContextManager:
 
         # Add recent messages
         compacted.extend(recent_messages)
-
-        if self.verbose:
-            print(f"[CONTEXT] After: {len(compacted)} messages")
-            new_tokens = sum(self.estimate_tokens(msg.get("content", "")) for msg in compacted)
-            print(f"[CONTEXT] New token estimate: {new_tokens}")
 
         return compacted
 

@@ -5,6 +5,8 @@
 from typing import List, Optional
 from dataclasses import dataclass, field
 from enum import Enum
+from rich.console import Console
+from rich.panel import Panel
 
 
 class TaskStatus(Enum):
@@ -62,7 +64,7 @@ class TaskPlan:
 class TaskPlanner:
     """Decomposes complex tasks into manageable subtasks."""
 
-    def __init__(self, model: str = "gemini/gemini-2.0-flash", verbose: bool = False):
+    def __init__(self, model: str = "gemini/gemini-3-pro-preview", verbose: bool = False):
         """
         Initialize the task planner.
 
@@ -72,6 +74,7 @@ class TaskPlanner:
         """
         self.model = model
         self.verbose = verbose
+        self.console = Console()
 
         # Keywords that suggest a task needs decomposition
         self.complex_keywords = [
@@ -96,17 +99,13 @@ class TaskPlanner:
         """
         # Heuristic: Simple tasks don't need decomposition
         if self._is_simple_task(task):
-            if self.verbose:
-                print(f"[PLANNER] Task is simple, no decomposition needed")
             return [task]
 
         # Use LLM to decompose complex tasks
-        subtasks = self._llm_decompose(task)
-
         if self.verbose:
-            print(f"[PLANNER] Decomposed into {len(subtasks)} subtasks:")
-            for i, st in enumerate(subtasks, 1):
-                print(f"  {i}. {st}")
+            self.console.print("[bold blue]Planner:[/bold blue] Analyzing task and creating plan...")
+
+        subtasks = self._llm_decompose(task)
 
         return subtasks
 
@@ -176,7 +175,7 @@ Subtasks:"""
 
         except Exception as e:
             if self.verbose:
-                print(f"[PLANNER] LLM decomposition failed: {e}")
+                print(f"[bold red][PLANNER] LLM decomposition failed:[/bold red] {e}")
 
         # Fallback: try simple heuristic decomposition
         return self._heuristic_decompose(task)

@@ -54,6 +54,15 @@ def show_help(con: Console):
 
 def show_options_menu(con: Console, task: str, config: InteractiveConfig) -> Optional[InteractiveConfig]:
     """Display and handle the options menu."""
+    # Snapshot so Cancel can restore — the loop mutates config in-place
+    original = InteractiveConfig(
+        model=config.model,
+        max_iterations=config.max_iterations,
+        verbose=config.verbose,
+        use_rag=config.use_rag,
+        use_planning=config.use_planning,
+    )
+
     while True:
         # Display status with tri-state: ON / auto / OFF
         if config.use_rag is True:
@@ -70,17 +79,15 @@ def show_options_menu(con: Console, task: str, config: InteractiveConfig) -> Opt
         else:
             plan_status = "[red]OFF[/red]"
 
-        verbose_status = "[green]ON[/green]" if config.verbose else "[dim]off[/dim]"
         model_short = config.model.replace("gemini/", "")
 
         menu = f"""[bold]Current Settings:[/bold]
   1. RAG (semantic search): {rag_status}
   2. Planning (task decomposition): {plan_status}
-  3. Verbose output: {verbose_status}
-  4. Model: [cyan]{model_short}[/cyan]
-  5. Max iterations: [cyan]{config.max_iterations}[/cyan]
+  3. Model: [cyan]{model_short}[/cyan]
+  4. Max iterations: [cyan]{config.max_iterations}[/cyan]
 
-  [green]6. Run task[/green] | [yellow]0. Cancel[/yellow]
+  [green]5. Run task[/green] | [yellow]0. Cancel[/yellow]
 
 [dim]Tip: Set to 'auto' to let AI suggest features[/dim]"""
 
@@ -89,9 +96,14 @@ def show_options_menu(con: Console, task: str, config: InteractiveConfig) -> Opt
         else:
             con.print(Panel(menu, title="[bold blue]Settings[/bold blue]", border_style="blue"))
 
-        choice = Prompt.ask("Select option", default="6")
+        choice = Prompt.ask("Select option", default="5")
 
         if choice == "0":
+            # Restore everything to what it was before the menu opened
+            config.model = original.model
+            config.max_iterations = original.max_iterations
+            config.use_rag = original.use_rag
+            config.use_planning = original.use_planning
             return None
         elif choice == "1":
             # Cycle: None (auto) -> True (on) -> False (off) -> None
@@ -109,9 +121,7 @@ def show_options_menu(con: Console, task: str, config: InteractiveConfig) -> Opt
             else:
                 config.use_planning = None
         elif choice == "3":
-            config.verbose = not config.verbose
-        elif choice == "4":
-            models = ["gemini/gemini-2.5-flash", "gemini/gemini-2.5-pro", "gemini/gemini-2.0-flash"]
+            models = ["gemini/gemini-3-flash-preview", "gemini/gemini-3-pro-preview", "gemini/gemini-2.5-flash-lite", "gemini/gemini-2.5-flash", "gemini/gemini-2.5-pro"]
             con.print("\n[bold]Available models:[/bold]")
             for i, m in enumerate(models, 1):
                 con.print(f"  {i}. {m.replace('gemini/', '')}")
@@ -122,14 +132,14 @@ def show_options_menu(con: Console, task: str, config: InteractiveConfig) -> Opt
                     config.model = models[idx]
             except ValueError:
                 pass
-        elif choice == "5":
+        elif choice == "4":
             try:
                 new_iters = int(Prompt.ask("Max iterations", default=str(config.max_iterations)))
                 if 1 <= new_iters <= 50:
                     config.max_iterations = new_iters
             except ValueError:
                 pass
-        elif choice == "6":
+        elif choice == "5":
             return config
 
         con.print()
@@ -140,15 +150,10 @@ def apply_config_to_agent(agent: Any, config: InteractiveConfig, con: Console) -
     try:
         agent.model = config.model
         agent.max_iterations = config.max_iterations
-        agent.verbose = config.verbose
-        if hasattr(agent, 'context_manager'):
-            agent.context_manager.verbose = config.verbose
 
         con.print("[green]Settings applied:[/green]")
         con.print(f"  Model: {config.model.replace('gemini/', '')}")
         con.print(f"  Max iterations: {config.max_iterations}")
-        if config.verbose:
-            con.print("  Verbose: enabled")
         return True
     except Exception:
         con.print("[dim]Settings stored, will apply on next run[/dim]")
@@ -315,7 +320,7 @@ def cli(
             # Menu trigger (ends with \)
             if user_input.endswith("\\"):
                 task = user_input[:-1].strip()
-                old_model, old_iters, old_verbose = config.model, config.max_iterations, config.verbose
+                old_model, old_iters = config.model, config.max_iterations
 
                 result = show_options_menu(console, task, config)
                 if result is None:
@@ -323,7 +328,7 @@ def cli(
                 config = result
 
                 # Apply settings if changed
-                if old_model != config.model or old_iters != config.max_iterations or old_verbose != config.verbose:
+                if old_model != config.model or old_iters != config.max_iterations:
                     apply_config_to_agent(agent, config, console)
 
                 if not task:
@@ -358,7 +363,7 @@ def cli(
             if use_planning_now and agent.planner is None:
                 console.print("[dim]Initializing planner...[/dim]")
                 from simplecoder.planner import TaskPlanner
-                agent.planner = TaskPlanner(model=agent.model, verbose=agent.verbose)
+                agent.planner = TaskPlanner(model="gemini/gemini-3-pro-preview", verbose=agent.verbose)
 
             # Temporarily set agent flags
             original_rag, original_planning = agent.use_rag, agent.use_planning

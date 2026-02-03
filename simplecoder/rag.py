@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
 import numpy as np
+from rich.console import Console
 
 
 @dataclass
@@ -52,6 +53,7 @@ class RAG:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(exist_ok=True)
         self.verbose = verbose
+        self.console = Console()
 
         self.chunks: List[CodeChunk] = []
         self.embeddings_cache_path = self.cache_dir / "embeddings.pkl"
@@ -66,18 +68,13 @@ class RAG:
         """Build the code index from Python files."""
         # Check if we have a valid cache
         if self._load_cache():
-            if self.verbose:
-                print(f"[RAG] Loaded {len(self.chunks)} chunks from cache")
             return
 
         if self.verbose:
-            print(f"[RAG] Building index from {self.index_pattern}")
+            self.console.print("[bold yellow]RAG:[/bold yellow] Indexing codebase for semantic search...")
 
         # Find all matching files
         py_files = list(Path(".").glob(self.index_pattern))
-
-        if self.verbose:
-            print(f"[RAG] Found {len(py_files)} files to index")
 
         # Parse each file and extract chunks
         for py_file in py_files:
@@ -99,9 +96,6 @@ class RAG:
             except Exception as e:
                 if self.verbose:
                     print(f"[RAG] Error parsing {py_file}: {e}")
-
-        if self.verbose:
-            print(f"[RAG] Extracted {len(self.chunks)} code chunks")
 
         # Embed all chunks
         if self.chunks:
@@ -186,9 +180,6 @@ class RAG:
         if not self.chunks:
             return
 
-        if self.verbose:
-            print(f"[RAG] Embedding {len(self.chunks)} chunks...")
-
         # Create text representations for embedding
         # Include name, type, and a preview of the code
         texts = []
@@ -221,10 +212,6 @@ class RAG:
                         else:
                             emb = getattr(emb_data, 'embedding', [])
                         self.chunks[idx].embedding = np.array(emb)
-
-            if self.verbose:
-                embedded_count = sum(1 for c in self.chunks if c.embedding is not None)
-                print(f"[RAG] Successfully embedded {embedded_count} chunks")
 
         except Exception as e:
             if self.verbose:
