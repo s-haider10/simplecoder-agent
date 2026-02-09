@@ -73,7 +73,7 @@ This is an application of the **recognition over recall** principle: the agent d
 
 ### Progressive Disclosure in the CLI
 
-Not every user needs every feature on every invocation. The interactive mode defaults to a minimal prompt. RAG and planning are off by default. Verbose output is off. The settings menu is only shown if you explicitly request it (type `\` after your input, or end your input with `\`). Features that aren't activated are never initialized—no embedding indexing runs unless you ask for it.
+Not every user needs every feature on every invocation. The interactive mode defaults to a minimal prompt with RAG and planning set to **auto** (enabled based on keyword detection in your input). Verbose output is off. The settings menu is only shown if you explicitly request it (type `\` after your input, or end your input with `\`). Features that aren't activated are never initialized—no embedding indexing runs unless the auto-detection triggers it or you explicitly enable it.
 
 ---
 
@@ -125,7 +125,7 @@ Special inputs in interactive mode:
 | `your task\` (trailing backslash) | Opens settings menu before running the task |
 | `exit` / `quit` / `q`             | Exits                                       |
 
-The settings menu shows three toggles—RAG, planning, verbose—each with three states: ON, auto, OFF. In auto mode, the agent uses keyword heuristics to decide whether the feature is useful for a given input. You can lock them on or off if you prefer.
+The settings menu shows toggles for RAG and planning, each with three states: **ON**, **auto**, **OFF**. Both default to **auto** in interactive mode, where the agent uses keyword heuristics to decide whether the feature is useful for a given input. You can lock them on or off if you prefer.
 
 ### Single Task Mode
 
@@ -154,8 +154,8 @@ python -m simplecoder.main --use-rag --use-planning --verbose "refactor the auth
 | `--max-iterations`                 | `10`                            | Max ReAct loop iterations per task    |
 | `--verbose`                        | off                             | Show agent reasoning and tool details |
 | `--interactive / --no-interactive` | on                              | Interactive loop vs single-shot       |
-| `--use-planning`                   | off                             | Decompose complex tasks into subtasks |
-| `--use-rag`                        | off                             | Enable semantic code search           |
+| `--use-planning`                   | auto (interactive) / off (CLI)  | Decompose complex tasks into subtasks |
+| `--use-rag`                        | auto (interactive) / off (CLI)  | Enable semantic code search           |
 | `--rag-embedder`                   | `gemini/gemini-embedding-001`   | Embedding model                       |
 | `--rag-index-pattern`              | `**/*.py`                       | Which files to index for search       |
 
