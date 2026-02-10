@@ -87,7 +87,7 @@ def show_options_menu(con: Console, task: str, config: InteractiveConfig) -> Opt
   3. Model: [cyan]{model_short}[/cyan]
   4. Max iterations: [cyan]{config.max_iterations}[/cyan]
 
-  [green]5. Run task[/green] | [yellow]0. Cancel[/yellow]
+  [green]5. Save Settings[/green] | [yellow]0. Cancel[/yellow]
 
 [dim]Tip: Set to 'auto' to let AI suggest features[/dim]"""
 

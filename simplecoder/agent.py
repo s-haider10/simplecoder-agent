@@ -25,74 +25,57 @@ from .tools import TOOLS, execute_tool
 from .permissions import PermissionManager
 from .context import ContextManager
 
+SYSTEM_PROMPT = """You are SimpleCoder, a vibe coding assistant.
 
-# =============================================================================
-# SYSTEM PROMPT WITH EDIT PROTOCOL
-# =============================================================================
+# TOOLS
 
-SYSTEM_PROMPT = """You are SimpleCoder, a deterministic coding assistant.
-
-# TOOLS AVAILABLE
-
-- read_file(path): Read file with line numbers. ALWAYS call this before editing.
+- read_file(path): Read file with line numbers. ALWAYS call before editing.
 - write_file(path, content): Create or overwrite a file (atomic write).
-- replace_lines(path, start_line, end_line, new_content): Edit file by line numbers.
+- replace_lines(path, start_line, end_line, new_content): Edit lines [start, end] inclusive.
 - list_files(pattern): List files matching glob pattern.
-- search_files(pattern): Search for text in files.
+- search_files(pattern): Search for text across files.
 
 # EDIT PROTOCOL (MANDATORY)
 
-When editing files, you MUST follow this exact workflow:
+Every file edit MUST follow: Read → Plan → Replace → Verify.
 
-## Step 1: Read the file first
-- Call: read_file(path)
-- Output shows line numbers like: "   1 | def hello():"
-- Purpose: See exact line numbers for editing
+1. **Read**: Call read_file(path) ONCE to see the full file with line numbers.
+2. **Plan**: Identify ALL changes needed. Group related changes by line range.
+3. **Replace**: Use replace_lines with WIDE line ranges (10-50 lines at once).
+   - Include unchanged lines within the range — this is fine and expected.
+   - One replace_lines call can handle multiple changes if they're in the same region.
+4. **Verify**: Call read_file(path) ONCE at the end to confirm all changes.
 
-## Step 2: Identify lines to change
-- Note the start_line and end_line (1-indexed, inclusive)
-- Example: To change line 5, use start_line=5, end_line=5
+For new files: write_file(path, content) — no verification needed.
 
-## Step 3: Replace those lines
-- Call: replace_lines(path, start_line, end_line, new_content)
-- new_content replaces lines start_line through end_line
-- Output shows unified diff of changes
+# BATCHING EDITS (CRITICAL)
 
-## Step 4: Verify the edit
-- Call: read_file(path) again to confirm changes
+WRONG approach (wastes iterations):
+  - replace_lines(file, 5, 5, "line5")  # edit line 5
+  - replace_lines(file, 10, 10, "line10")  # edit line 10
+  - replace_lines(file, 15, 15, "line15")  # edit line 15
 
-# CRITICAL RULES
+RIGHT approach (efficient):
+  - replace_lines(file, 5, 20, "...all 16 lines including changes...")
 
-1. NEVER guess line numbers. Always read_file first.
-2. NEVER use text matching to find content. Use line numbers only.
-3. NEVER rewrite entire files unless creating new ones.
-4. Paths are relative to project root. Never use "output/" prefix.
-5. After every edit, verify by reading the file again.
+When making multiple changes to a file:
+- Identify the FIRST and LAST line that need changes
+- Replace that entire range in ONE call, including unchanged lines in between
+- This is more efficient than multiple small edits
 
-# EXAMPLES
+# RULES
 
-GOOD workflow for editing:
-1. read_file("app.py")           # See: "   5 |     print('old')"
-2. replace_lines("app.py", 5, 5, "    print('new')")
-3. read_file("app.py")           # Verify change
+1. NEVER guess line numbers — always read_file first.
+2. NEVER make line-by-line edits. Batch into ranges of 10-50 lines.
+3. NEVER verify after each edit. Verify ONCE at the end.
+4. All paths are relative to project root. No "output/" prefix.
+5. If a tool returns an error, read the message and retry.
 
-GOOD workflow for creating:
-1. write_file("hello.py", "print('hello world')")
-2. read_file("hello.py")         # Verify creation
+# RESPONSE STYLE
 
-BAD (will fail):
-- replace_lines without reading first
-- Guessing line numbers
-- Using "output/file.py" instead of "file.py"
-
-# BEHAVIOR
-
-- Be concise. Use tools, don't describe what you would do.
-- After completing a task, summarize what you did concisely and in a user friendly way.
-- If a tool returns an error, read it carefully and adjust.
+- Act, don't narrate intent. Use tools immediately.
+- After completing a task, give a concise summary.
 """
-
-
 class Agent:
     """Deterministic ReAct-style coding agent with streaming."""
 
@@ -223,6 +206,7 @@ class Agent:
         """Execute task with given message history."""
         iteration = 0
         last_three_tools = []  # For cycle detection
+        file_read_counts = {}  # Track reads per file path (for stuck detection)
 
         while iteration < self.max_iterations:
             iteration += 1
@@ -242,7 +226,7 @@ class Agent:
                         messages=current_messages,
                         tools=available_tools,
                         tool_choice="auto",
-                        temperature=0.1,  # DETERMINISTIC
+                        temperature=0.3,  
                         max_tokens=2048,
                         stream=True  # ENABLE STREAMING
                     )
@@ -381,6 +365,32 @@ class Agent:
                     "tool_call_id": tool_id,
                     "content": tool_result
                 })
+
+                # Track file reads and inject recovery prompt if stuck
+                if tool_name == "read_file":
+                    file_path = tool_args.get("path", "")
+                    file_read_counts[file_path] = file_read_counts.get(file_path, 0) + 1
+
+                    if file_read_counts[file_path] >= 3:
+                        recovery_message = f"""
+RECOVERY: You've read '{file_path}' {file_read_counts[file_path]} times without making changes.
+
+STOP and PLAN before your next action:
+1. What is the user asking for?
+2. What specific changes need to be made to this file?
+3. What are the exact line numbers for each change?
+
+Now proceed with a clear plan - make your edits.
+"""
+                        messages.append({
+                            "role": "user",
+                            "content": recovery_message
+                        })
+                        file_read_counts[file_path] = 0  # Reset counter
+
+                # Reset counters after successful edits
+                elif tool_name in ["write_file", "replace_lines"] and not tool_result.startswith("✗"):
+                    file_read_counts.clear()
 
         # Max iterations reached
         return f"✗ Reached maximum iterations ({self.max_iterations}). Task may not be complete."
