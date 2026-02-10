@@ -3,6 +3,7 @@
 A ReAct-style CLI coding agent that solves programming tasks through iterative reasoning, deterministic file editing, and optional semantic code search.
 
 **Demo:** [Watch on YouTube](https://www.youtube.com/watch?v=dQ4qWciEOt8)
+**Repo:** [Github](https://github.com/s-haider10/simplecoder-agent)
 
 **Quick Setup:**
 
