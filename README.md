@@ -4,7 +4,7 @@ A ReAct-style CLI coding agent that solves programming tasks through iterative r
 
 **Demo:** [Watch on YouTube](https://www.youtube.com/watch?v=dQ4qWciEOt8)
 **Repo:** [Github](https://github.com/s-haider10/simplecoder-agent)
-
+**Finetune repo** [Repo for Finetuning](https://github.com/s-haider10/finetunned_coding_agent)
 **Quick Setup:**
 
 ```bash
